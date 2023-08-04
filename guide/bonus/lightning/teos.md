@@ -46,7 +46,7 @@ Make sure that you have [reduced the database cache of Bitcoin Core](bitcoin-cli
 
 ## The Eye Of Satoshi
 
-[The Eye of Satoshi]([https://github.com/romanz/electrs](https://github.com/talaia-labs/rust-teos){:target="_blank"} is a Lightning watchtower compliant with BOLT13, written in Rust.
+[The Eye of Satoshi](https://github.com/talaia-labs/rust-teos){:target="_blank"} is a Lightning watchtower compliant with [BOLT13](https://github.com/sr-gi/bolt13), written in Rust.
 There are no binaries available, so we will compile the application ourselves.
 
 ### Build from source code
