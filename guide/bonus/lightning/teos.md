@@ -6,10 +6,10 @@ parent: Bitcoin
 ---
 <!-- markdownlint-disable MD014 MD022 MD025 MD033 MD040 -->
 
-# Electrum server
+# The Eye Of Satoshi
 {: .no_toc }
 
-We set up [Electrs](https://github.com/romanz/electrs/){:target="_blank"} to serve as a full Electrum server for use with your Bitcoin software or hardware wallets.
+We set up [teos](https://github.com/talaia-labs/rust-teos){:target="_blank"} to serve as a watchtower for CLN Lightning node.
 
 ---
 
@@ -21,16 +21,13 @@ We set up [Electrs](https://github.com/romanz/electrs/){:target="_blank"} to ser
 
 ---
 
-## Bitcoin with hardware wallets
+## Watchtower
 
-The best way to safekeep your bitcoin (meaning the best combination of security and usability) is to use a hardware wallet (like [BitBox](https://shiftcrypto.ch/bitbox02){:target="_blank"}, [Coldcard](https://coldcard.com/){:target="_blank"} , [Ledger](https://www.ledger.com){:target="_blank"} or [Trezor](https://trezor.io){:target="_blank"}) in combination with your own Bitcoin node.
-This gives you security, privacy and eliminates the need to trust a third party to verify transactions.
+Lightning channels need to be monitored to prevent malicious behavior by your channel peers. 
+If your RaspiBolt goes down for a longer period of time, for instance due to a hardware problem, a
+node on the other side of one of your channels might try to close the channel with an earlier channel balance that is better for them.
 
-Bitcoin Core on the RaspiBolt itself is not meant to hold funds.
-
-One possibility to use Bitcoin Core with your Bitcoin wallets is to use an Electrum server as middleware.
-It imports data from Bitcoin Core and provides it to software wallets supporting the Electrum protocol.
-Desktop wallets like [Sparrow](https://sparrowwallet.com/){:target="_blank"}, the [BitBoxApp](https://shiftcrypto.ch/app/){:target="_blank"}, [Electrum](https://electrum.org/){:target="_blank"} or [Specter Desktop](https://specter.solutions/desktop/){:target="_blank"} that support hardware wallets can then be used with your own sovereign Bitcoin node.
+The Eye Of Satoshi can monitor your channels for you. If they detect such bad behavior, they can react on your behalf, and send a punishing transaction to close this channel.
 
 ---
 
@@ -40,69 +37,32 @@ Make sure that you have [reduced the database cache of Bitcoin Core](bitcoin-cli
 
 ### Install dependencies
 
-* Install build tools needed to compile Electrs from the source code
+* Install build tools needed to compile Teos from the source code
 
   ```sh
-  $ sudo apt install cargo clang cmake
+  $ sudo apt-get update
+  $ sudo apt install cargo clang cmake rustfmt libssl-dev
   ```
 
-### Firewall & reverse proxy
+## The Eye Of Satoshi
 
-In the [Security section](../raspberry-pi/security.md), we already set up NGINX as a reverse proxy.
-Now we can add the Electrs configuration.
-
-* Enable NGINX reverse proxy to add SSL/TLS encryption to the Electrs communication.
-  Create the configuration file and paste the following content
-
-  ```sh
-  $ sudo nano /etc/nginx/streams-enabled/electrs-reverse-proxy.conf
-  ```
-
-  ```nginx
-  upstream electrs {
-    server 127.0.0.1:50001;
-  }
-
-  server {
-    listen 50002 ssl;
-    proxy_pass electrs;
-  }
-  ```
-
-* Test and reload NGINX configuration
-
-  ```sh
-  $ sudo nginx -t
-  $ sudo systemctl reload nginx
-  ```
-
-* Configure the firewall to allow incoming requests
-
-  ```sh
-  $ sudo ufw allow 50002/tcp comment 'allow Electrum SSL'
-  ```
-
----
-
-## Electrs
-
-An easy and performant way to run an Electrum server is to use [Electrs](https://github.com/romanz/electrs){:target="_blank"}, the Electrum Server in Rust.
+[The Eye of Satoshi]([https://github.com/romanz/electrs](https://github.com/talaia-labs/rust-teos){:target="_blank"} is a Lightning watchtower compliant with BOLT13, written in Rust.
 There are no binaries available, so we will compile the application ourselves.
 
 ### Build from source code
 
-We get the latest release of the Electrs source code, verify it, compile it to an executable binary and install it.
+We get the latest release of the Teos source code, verify it, compile it to an executable binary and install it.
 
 * Download the source code for the latest Electrs release.
-  You can check the [release page](https://github.com/romanz/electrs/releases){:target="_blank"} to see if a newer release is available.
+  You can check the [release page](https://github.com/talaia-labs/rust-teos/releases){:target="_blank"} to see if a newer release is available.
   Other releases might not have been properly tested with the rest of the RaspiBolt configuration, though.
 
   ```sh
-  $ VERSION="0.9.14"
+  $ VERSION="0.2.0"
   $ mkdir /home/admin/rust
   $ cd /home/admin/rust
-  $ git clone --branch v$VERSION https://github.com/romanz/electrs.git
-  $ cd electrs
+  $ git clone --branch v$VERSION git clone https://github.com/talaia-labs/rust-teos.git
+  $ cd rust-teos
   ```
 
 * To avoid using bad source code, verify that the release has been properly signed by the main developer [Roman Zeyde](https://github.com/romanz){:target="_blank"}.
@@ -121,73 +81,93 @@ We get the latest release of the Electrs source code, verify it, compile it to a
 
   ```sh
   $ cargo build --locked --release
-  $ sudo install -m 0755 -o root -g root -t /usr/local/bin ./target/release/electrs
+  $ sudo install -m 0755 -o root -g root -t /usr/local/bin ./target/release/teos-cli
+  $ sudo install -m 0755 -o root -g root -t /usr/local/bin ./target/release/teosd
   ```
 
 ### Configuration
 
-* Create the "electrs" service user, and make it a member of the "bitcoin" group
+* Create the "teos" service user, and make it a member of the "bitcoin" and "debian-tor" group
 
   ```sh
-  $ sudo adduser --disabled-password --gecos "" electrs
-  $ sudo adduser electrs bitcoin
+  $ sudo adduser --disabled-password --gecos "" teos
+  $ sudo usermod -a -G bitcoin,debian-tor teos
   ```
 
-* Create the Electrs data directory
+* Create the Teos data directory
 
   ```sh
-  $ sudo mkdir /data/electrs
-  $ sudo chown -R electrs:electrs /data/electrs
+  $ sudo mkdir /data/teos
+  $ sudo chown -R teos:teos /data/teos
   ```
 
-* Switch to the "electrs" user and create the config file with the following content
+* Switch to the "teos" user, make link to .teos dir and create the config file with the following content
 
   ```sh
-  $ sudo su - electrs
-  $ nano /data/electrs/electrs.conf
-  ```
-
-  ```sh
-  # RaspiBolt: electrs configuration
-  # /data/electrs/electrs.conf
-
-  # Bitcoin Core settings
-  network = "bitcoin"
-  daemon_dir= "/home/bitcoin/.bitcoin"
-  daemon_rpc_addr = "127.0.0.1:8332"
-  daemon_p2p_addr = "127.0.0.1:8333"
-
-  # Electrs settings
-  electrum_rpc_addr = "127.0.0.1:50001"
-  db_dir = "/data/electrs/db"
-
-  # Logging
-  log_filters = "INFO"
-  timestamp = true
-  ```
-
-* Let's start Electrs manually first to check if everything runs as expected.
-  It will immediately start with the initial indexing of the Bitcoin blocks.
-
-  ```sh
-  $ electrs --conf /data/electrs/electrs.conf
+  $ sudo su - teos
+  $ ln -s /data/teos /home/teos/.teos
+  $ nano nano /data/teos/teos.toml
   ```
 
   ```sh
-  Starting electrs 0.9.14 on aarch64 linux with Config { network: Bitcoin, db_path: "/data/electrs/db/bitcoin", daemon_dir: "/home/bitcoin/.bitcoin", daemon_auth: CookieFile("/home/bitcoin/.bitcoin/.cookie"), daemon_rpc_addr: 127.0.0.1:8332, daemon_p2p_addr: 127.0.0.1:8333, electrum_rpc_addr: 127.0.0.1:50001, monitoring_addr: 127.0.0.1:4224, wait_duration: 10s, jsonrpc_timeout: 15s, index_batch_size: 10, index_lookup_limit: Some(1000), reindex_last_blocks: 0, auto_reindex: true, ignore_mempool: false, sync_once: false, disable_electrum_rpc: false, server_banner: "Welcome to electrs 0.9.14 (Electrum Rust Server)!", args: [] }
-  [2021-11-09T07:09:42.744Z INFO  electrs::metrics::metrics_impl] serving Prometheus metrics on 127.0.0.1:4224
-  [2021-11-09T07:09:42.744Z INFO  electrs::server] serving Electrum RPC on 127.0.0.1:50001
-  [2021-11-09T07:09:42.812Z INFO  electrs::db] "/data/electrs/db/bitcoin": 0 SST files, 0 GB, 0 Grows
-  [2021-11-09T07:09:43.174Z INFO  electrs::index] indexing 2000 blocks: [1..2000]
-  [2021-11-09T07:09:44.665Z INFO  electrs::chain] chain updated: tip=00000000dfd5d65c9d8561b4b8f60a63018fe3933ecb131fb37f905f87da951a, height=2000
-  [2021-11-09T07:09:44.986Z INFO  electrs::index] indexing 2000 blocks: [2001..4000]
-  [2021-11-09T07:09:46.191Z INFO  electrs::chain] chain updated: tip=00000000922e2aa9e84a474350a3555f49f06061fd49df50a9352f156692a842, height=4000
-  [2021-11-09T07:09:46.481Z INFO  electrs::index] indexing 2000 blocks: [4001..6000]
-  [2021-11-09T07:09:47.581Z INFO  electrs::chain] chain updated: tip=00000000dbbb79792303bdd1c6c4d7ab9c21bba0667213c2eca955e11230c5a5, height=6000
+  # RaspiBolt: teos configuration
+  # /data/teos/teos.toml
+
+  # API
+  api_bind = "127.0.0.1"
+  api_port = 9814
+  tor_control_port = 9051
+  onion_hidden_service_port = 9814
+  tor_support = true
+  
+  # RPC
+  rpc_bind = "127.0.0.1"
+  rpc_port = 8814
+  
+  # bitcoind
+  btc_network = "mainnet"
+  btc_rpc_user = "CSW"
+  btc_rpc_password = "NotSatoshi"
+  btc_rpc_connect = "localhost"
+  btc_rpc_port = 8332
+  
+  # Flags
+  debug = false
+  deps_debug = false
+  overwrite_key = false
+  
+  # General
+  subscription_slots = 10000
+  subscription_duration = 4320
+  expiry_delta = 6
+  min_to_self_delay = 20
+  polling_delta = 60
+  
+  # Internal API
+  internal_api_bind = "127.0.0.1"
+  internal_api_port = 50051
+  ```
+
+* Let's start Teos manually first to check if everything runs as expected.
+
+  ```sh
+  $ teosd
+  ```
+
+  ```sh
+  2023-08-04T06:46:12.340Z INFO [teosd] Loading configuration from file
+  2023-08-04T06:46:12.341Z INFO [teosd] tower_id: 032a4ff7dd37ae01de848c3029c91253e0f30ee9038dcbcd08d6338bbbcb11339a
+  2023-08-04T06:46:12.459Z INFO [teosd] Last known block: 000000000000000000006592a6929cb1db3f2f614b7921e2f778e8b54a2711bd
+  2023-08-04T06:46:24.318Z INFO [teosd] Bootstrapping from backed up data
+  2023-08-04T06:46:24.438Z INFO [teosd] Bootstrap completed. Turning on interfaces
+  2023-08-04T06:46:24.438Z INFO [teos::api::tor] Loading Tor secret key from disk
+  2023-08-04T06:46:24.441Z INFO [teosd] Starting up Tor hidden service
+  2023-08-04T06:46:24.443Z INFO [teos::api::tor] Onion service: devrzfhfi2xay3ur5fpiualkqq6sedkaykvwsaf4in5rprohsoxfqoad.onion:9814
+  2023-08-04T06:46:24.443Z INFO [teosd] Tower ready
   ...
   ```
 
-* Stop Electrs with `Ctrl`-`C` and exit the "electrs" user session.
+* Stop Teos with `Ctrl`-`C` and exit the "teos" user session.
 
   ```sh
   $ exit
